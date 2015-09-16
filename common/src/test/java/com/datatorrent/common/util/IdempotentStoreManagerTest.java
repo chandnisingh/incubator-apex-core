@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datatorrent.lib.io;
+package com.datatorrent.common.util;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Map;
 
 import org.apache.commons.io.FileUtils;
@@ -38,30 +39,59 @@ import com.datatorrent.api.Context;
 import com.datatorrent.api.DAG;
 import com.datatorrent.api.annotation.Stateless;
 
-import com.datatorrent.lib.helper.OperatorContextTestHelper;
-
 /**
- * Tests for {@link IdempotentStorageManager}
+ * Tests for {@link IdempotentStoreManager}
  */
-public class IdempotentStorageManagerTest
+public class IdempotentStoreManagerTest
 {
   private static class TestMeta extends TestWatcher
   {
 
     String applicationPath;
-    IdempotentStorageManager.FSIdempotentStorageManager storageManager;
+    IdempotentStoreManager.FSIdempotentStoreManager storageManager;
     Context.OperatorContext context;
 
     @Override
     protected void starting(Description description)
     {
       super.starting(description);
-      storageManager = new IdempotentStorageManager.FSIdempotentStorageManager();
+      storageManager = new IdempotentStoreManager.FSIdempotentStoreManager();
       applicationPath = "target/" + description.getClassName() + "/" + description.getMethodName();
 
-      Attribute.AttributeMap.DefaultAttributeMap attributes = new Attribute.AttributeMap.DefaultAttributeMap();
+      final Attribute.AttributeMap.DefaultAttributeMap attributes = new Attribute.AttributeMap.DefaultAttributeMap();
       attributes.put(DAG.APPLICATION_PATH, applicationPath);
-      context = new OperatorContextTestHelper.TestIdOperatorContext(1, attributes);
+      context = new Context.OperatorContext()
+      {
+        @Override
+        public int getId()
+        {
+          return 1;
+        }
+
+        @Override
+        public Attribute.AttributeMap getAttributes()
+        {
+          return attributes;
+        }
+
+        @Override
+        public <T> T getValue(Attribute<T> key)
+        {
+          return attributes.get(key);
+        }
+
+        @Override
+        public void setCounters(Object counters)
+        {
+
+        }
+
+        @Override
+        public void sendMetrics(Collection<String> metricNames)
+        {
+
+        }
+      };
 
       storageManager.setup(context);
     }
@@ -72,8 +102,7 @@ public class IdempotentStorageManagerTest
       storageManager.teardown();
       try {
         FileUtils.deleteDirectory(new File("target/" + description.getClassName()));
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }
@@ -98,7 +127,7 @@ public class IdempotentStorageManagerTest
     testMeta.storageManager.save(data, 1, 1);
     testMeta.storageManager.setup(testMeta.context);
     @SuppressWarnings("unchecked")
-    Map<Integer, String> decoded = (Map<Integer, String>) testMeta.storageManager.load(1, 1);
+    Map<Integer, String> decoded = (Map<Integer, String>)testMeta.storageManager.load(1, 1);
     Assert.assertEquals("dataOf1", data, decoded);
   }
 
@@ -123,8 +152,7 @@ public class IdempotentStorageManagerTest
     for (Integer operatorId : decodedStates.keySet()) {
       if (operatorId == 1) {
         Assert.assertEquals("data of 1", dataOf1, decodedStates.get(1));
-      }
-      else {
+      } else {
         Assert.assertEquals("data of 2", dataOf2, decodedStates.get(2));
       }
     }
@@ -172,7 +200,7 @@ public class IdempotentStorageManagerTest
     testMeta.storageManager.save(dataOf2, 2, 1);
     testMeta.storageManager.save(dataOf3, 3, 1);
 
-    testMeta.storageManager.partitioned(Lists.<IdempotentStorageManager>newArrayList(testMeta.storageManager),
+    testMeta.storageManager.partitioned(Lists.<IdempotentStoreManager>newArrayList(testMeta.storageManager),
       Sets.newHashSet(2, 3));
     testMeta.storageManager.setup(testMeta.context);
     testMeta.storageManager.deleteUpTo(1, 1);

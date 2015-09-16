@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datatorrent.lib.io;
+package com.datatorrent.common.util;
 
 import java.io.IOException;
 import java.util.*;
@@ -36,10 +36,6 @@ import com.datatorrent.api.DAG;
 import com.datatorrent.api.StorageAgent;
 import com.datatorrent.api.annotation.Stateless;
 
-import com.datatorrent.lib.io.fs.AbstractFileInputOperator;
-
-import com.datatorrent.common.util.FSStorageAgent;
-
 /**
  * An idempotent storage manager allows an operator to emit the same tuples in every replayed application window. An idempotent agent
  * cannot make any guarantees about the tuples emitted in the application window which fails.
@@ -53,7 +49,7 @@ import com.datatorrent.common.util.FSStorageAgent;
  * @since 2.0.0
  */
 
-public interface IdempotentStorageManager extends StorageAgent, Component<Context.OperatorContext>
+public interface IdempotentStoreManager extends StorageAgent, Component<Context.OperatorContext>
 {
   /**
    * Gets the largest window for which there is recovery data.
@@ -63,7 +59,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
   /**
    * When an operator can partition itself dynamically then there is no guarantee that an input state which was being handled
    * by one instance previously will be handled by the same instance after partitioning. <br/>
-   * For eg. An {@link AbstractFileInputOperator} instance which reads a File X till offset l (not check-pointed) may no longer be the
+   * For eg. A FileInputOperator instance which reads a File X till offset l (not check-pointed) may no longer be the
    * instance that handles file X after repartitioning as no. of instances may have changed and file X is re-hashed to another instance. <br/>
    * The new instance wouldn't know from what point to read the File X unless it reads the idempotent storage of all the operators for the window
    * being replayed and fix it's state.
@@ -81,7 +77,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
    * @param windowId
    * @throws IOException
    */
-  public void deleteUpTo(int operatorId, long windowId) throws IOException;
+  void deleteUpTo(int operatorId, long windowId) throws IOException;
 
   /**
    * This informs the idempotent storage manager that operator is partitioned so that it can set properties and distribute state.
@@ -89,14 +85,14 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
    * @param newManagers        all the new idempotent storage managers.
    * @param removedOperatorIds set of operator ids which were removed after partitioning.
    */
-  void partitioned(Collection<IdempotentStorageManager> newManagers, Set<Integer> removedOperatorIds);
+  void partitioned(Collection<IdempotentStoreManager> newManagers, Set<Integer> removedOperatorIds);
 
-  IdempotentStorageManager newInstance();
+  IdempotentStoreManager newInstance();
 
   /**
-   * An {@link IdempotentStorageManager} that uses FS to persist state.
+   * An {@link IdempotentStoreManager} that uses FS to persist state.
    */
-  public static class FSIdempotentStorageManager implements IdempotentStorageManager
+  class FSIdempotentStoreManager implements IdempotentStoreManager
   {
     private static final String DEF_RECOVERY_PATH = "idempotentState";
 
@@ -128,7 +124,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
     protected transient FileSystem fs;
     protected transient Path appPath;
 
-    public FSIdempotentStorageManager()
+    public FSIdempotentStoreManager()
     {
       replayState = TreeMultimap.create();
       largestRecoveryWindow = Stateless.WINDOW_ID;
@@ -154,7 +150,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
 
             for (FileStatus status : fs.listStatus(operatorDirStatus.getPath())) {
               String fileName = status.getPath().getName();
-              if(fileName.endsWith(FSStorageAgent.TMP_FILE)) {
+              if (fileName.endsWith(FSStorageAgent.TMP_FILE)) {
                 continue;
               }
               long windowId = Long.parseLong(fileName, 16);
@@ -165,8 +161,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
             }
           }
         }
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }
@@ -246,8 +241,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
                 deletedOperators.remove(loperator);
                 fs.delete(loperatorPath, true);
               }
-            }
-            else if (loperator == operatorId) {
+            } else if (loperator == operatorId) {
               storageAgent.delete(loperator, lwindow);
             }
           }
@@ -272,10 +266,10 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
     }
 
     @Override
-    public void partitioned(Collection<IdempotentStorageManager> newManagers, Set<Integer> removedOperatorIds)
+    public void partitioned(Collection<IdempotentStoreManager> newManagers, Set<Integer> removedOperatorIds)
     {
       Preconditions.checkArgument(newManagers != null && !newManagers.isEmpty(), "there has to be one idempotent storage manager");
-      FSIdempotentStorageManager deletedOperatorsManager = null;
+      FSIdempotentStoreManager deletedOperatorsManager = null;
 
       if (removedOperatorIds != null && !removedOperatorIds.isEmpty()) {
         if (this.deletedOperators == null) {
@@ -284,9 +278,9 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
         this.deletedOperators.addAll(removedOperatorIds);
       }
 
-      for (IdempotentStorageManager storageManager : newManagers) {
+      for (IdempotentStoreManager storageManager : newManagers) {
 
-        FSIdempotentStorageManager lmanager = (FSIdempotentStorageManager) storageManager;
+        FSIdempotentStoreManager lmanager = (FSIdempotentStoreManager)storageManager;
         lmanager.recoveryPath = this.recoveryPath;
         lmanager.storageAgent = this.storageAgent;
 
@@ -308,7 +302,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
         //If some operators were removed then there needs to be a manager which can clean there state when it is not needed.
         if (deletedOperatorsManager == null) {
           //None of the managers were handling deleted operators data.
-          deletedOperatorsManager = (FSIdempotentStorageManager) newManagers.iterator().next();
+          deletedOperatorsManager = (FSIdempotentStoreManager)newManagers.iterator().next();
           deletedOperatorsManager.deletedOperators = Sets.newHashSet();
         }
 
@@ -321,8 +315,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
     {
       try {
         fs.close();
-      }
-      catch (IOException e) {
+      } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }
@@ -338,17 +331,17 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
     }
 
     @Override
-    public FSIdempotentStorageManager newInstance()
+    public FSIdempotentStoreManager newInstance()
     {
-      return new FSIdempotentStorageManager();
+      return new FSIdempotentStoreManager();
     }
   }
 
   /**
-   * This {@link IdempotentStorageManager} will never do recovery. This is a convenience class so that operators
+   * This {@link IdempotentStoreManager} will never do recovery. This is a convenience class so that operators
    * can use the same logic for maintaining idempotency and avoiding idempotency.
    */
-  public static class NoopIdempotentStorageManager implements IdempotentStorageManager
+  class NoopIdempotentStoreManager implements IdempotentStoreManager
   {
     @Override
     public long getLargestRecoveryWindow()
@@ -363,7 +356,7 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
     }
 
     @Override
-    public void partitioned(Collection<IdempotentStorageManager> newManagers, Set<Integer> removedOperatorIds)
+    public void partitioned(Collection<IdempotentStoreManager> newManagers, Set<Integer> removedOperatorIds)
     {
     }
 
@@ -405,9 +398,9 @@ public interface IdempotentStorageManager extends StorageAgent, Component<Contex
     }
 
     @Override
-    public NoopIdempotentStorageManager newInstance()
+    public NoopIdempotentStoreManager newInstance()
     {
-      return new NoopIdempotentStorageManager();
+      return new NoopIdempotentStoreManager();
     }
   }
 }
